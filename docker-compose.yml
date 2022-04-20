@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  mysql:
+    container_name: mysql-brokerage
+    image: mysql:latest
+    environment:
+      - MYSQL_ROOT_PASSWORD=eder
+    ports:
+      - "3306:3306"
+    networks:
+      - backend
+    volumes:
+      - brokerage-mysql-vol:/var/lib/mysql
+  brokerage:
+    container_name: brokerage-app
+    build:
+      context: .
+      dockerfile: brokerage.Dockerfile
+    ports:
+      - 8000:8000
+    environment:
+      - APP_PORT=8000
+      - DB_SERVER=mysql-brokerage
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASS=eder
+      - GO111MODULE=on
+    depends_on:
+      - mysql
+    command: [ "/brokerage-app" ]
+    expose:
+      - 8000
+    networks:
+      - backend
+
+networks:
+  backend:
+
+volumes:
+  brokerage-mysql-vol:
+    external: false

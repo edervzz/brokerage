@@ -9,16 +9,16 @@ type AccountServiceInterface struct {
 	repo domain.AccountRepository
 }
 
-func (a *AccountServiceInterface) CreateAccount(req AccountCreateRequest) (*AccountCreateResponse, *tech.AppMess) {
+func (a *AccountServiceInterface) CreateAccount(req *AccountCreateRequest) (*AccountCreateResponse, *tech.AppMess) {
 
-	if req.balance <= 0 {
+	if req.Balance <= 0 {
 		return nil, &tech.AppMess{
 			Code:    400,
 			Message: "balance must be greater than zero",
 		}
 	}
 
-	acct, err := a.repo.CreateAccount(req.balance)
+	acct, err := a.repo.CreateAccount(req.Balance)
 	if err != nil {
 		return nil, &tech.AppMess{
 			Code:    500,
@@ -32,4 +32,10 @@ func (a *AccountServiceInterface) CreateAccount(req AccountCreateRequest) (*Acco
 		Issuers:   []string{},
 	}, nil
 
+}
+
+func NewAccountServiceInterface(repo domain.AccountRepository) *AccountServiceInterface {
+	return &AccountServiceInterface{
+		repo,
+	}
 }

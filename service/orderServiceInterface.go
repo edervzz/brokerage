@@ -19,10 +19,29 @@ func (o *OrderServiceInterface) CreateOrder(req *OrderCreateRequest) *OrderCreat
 		return req.Orders[i].Operation > req.Orders[j].Operation
 	})
 
+	// q := domain.QueueDB{
+	// 	Client: client,
+	// }
+
+	// tm := time.Now().Local()
+	// ts := tm.Format("2006-01-02 15:04:05")
+
+	// qData := domain.Queue{
+	// 	TableName:    "order",
+	// 	LockArgument: strconv.Itoa(req.Orders[0].AccountID),
+	// 	Datetime:     ts,
+	// }
+	// err := q.Enqueue(qData)
+	// if err != nil {
+	// 	return nil, err.Error()
+	// }
+
+	// defer q.Dequeue(qData)
+
 	for _, v := range req.Orders {
 
 		orderIn := domain.OrderIn{
-			AccountID:   v.AccountID,
+			AccountID:   req.AccountID,
 			Timestamp:   v.Timestamp,
 			Operation:   v.Operation,
 			IssuerName:  v.IssuerName,
@@ -30,14 +49,14 @@ func (o *OrderServiceInterface) CreateOrder(req *OrderCreateRequest) *OrderCreat
 			SharePrice:  v.SharePrice,
 		}
 
-		result, be := o.repo.CreateOrder(orderIn)
+		result, err := o.repo.CreateOrder(&orderIn)
 
-		if be != "" {
+		if err != nil {
 			currentBalance = result.Balance
 			issuer = Issuer{
 				IssuerName: result.IssuerName,
 				BusinessErrors: []string{
-					be,
+					err.Error(),
 				},
 			}
 			issuers = append(issuers, issuer)
@@ -60,4 +79,10 @@ func (o *OrderServiceInterface) CreateOrder(req *OrderCreateRequest) *OrderCreat
 		},
 	}
 
+}
+
+func NewOrderServiceInterface(r domain.OrderRepository) *OrderServiceInterface {
+	return &OrderServiceInterface{
+		repo: r,
+	}
 }

@@ -1,28 +1,28 @@
 package service
 
 type OrderCreate struct {
-	AccountID   int
-	Timestamp   string
-	Operation   string
-	IssuerName  string
-	TotalShares int
-	SharePrice  float32
+	Timestamp   string  `json:"timestamp"`
+	Operation   string  `json:"operation"`
+	IssuerName  string  `json:"issuer_name"`
+	TotalShares int     `json:"total_shares"`
+	SharePrice  float32 `json:"total_price"`
 }
 
 type Issuer struct {
-	IssuerName     string
-	TotalShares    int
-	SharePrice     float32
-	BusinessErrors []string
+	IssuerName     string   `json:"issuer_name"`
+	TotalShares    int      `json:"total_shares"`
+	SharePrice     float32  `json:"share_price"`
+	BusinessErrors []string `json:"business_erros"`
 }
 
 type CurrentBalance struct {
-	Cash    float32
-	Issuers []Issuer
+	Cash    float32  `json:"cash"`
+	Issuers []Issuer `json:"issuers"`
 }
 
 type OrderCreateRequest struct {
-	Orders []OrderCreate
+	AccountID int           `json:"account_id"`
+	Orders    []OrderCreate `json:"orders"`
 }
 
 type OrderCreateResponse struct {

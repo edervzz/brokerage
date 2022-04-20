@@ -22,5 +22,5 @@ type Order struct {
 }
 
 type OrderRepository interface {
-	CreateOrder(OrderIn) (*Order, string)
+	CreateOrder(*OrderIn) (*Order, error)
 }
