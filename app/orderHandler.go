@@ -15,18 +15,18 @@ type OrderHandler struct {
 
 func (h OrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
-	orderRes := service.OrderCreateRequest{}
-	orders := []service.OrderCreate{}
 
-	accountId, err := strconv.Atoi(mux.Vars(r)["id"])
+	var err error
+	orderRes := service.OrderCreateRequest{}
+
+	orderRes.AccountID, err = strconv.Atoi(mux.Vars(r)["id"])
 	if err != nil {
-		json.NewEncoder(w).Encode("cannot get account id")
 		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode("route parameter 'id', was not provided")
+		return
 	}
 
-	orderRes.AccountID = accountId
-	json.NewDecoder(r.Body).Decode(&orders)
-	orderRes.Orders = orders
+	json.NewDecoder(r.Body).Decode(&orderRes.Orders)
 
 	response := h.service.CreateOrder(&orderRes)
 	json.NewEncoder(w).Encode(response)

@@ -1,8 +1,8 @@
 package domain
 
 import (
+	"brokerage/tech"
 	"errors"
-	"fmt"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -17,13 +17,13 @@ func (db AccountDB) CreateAccount(cash float32) (*Account, error) {
 		VALUES(?)`,
 		cash)
 	if err != nil {
-		fmt.Println("error: CreateAccount: check if db was created:" + err.Error())
+		tech.LogInfo(err.Error())
 		return nil, errors.New("INVALID_OPERATION")
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		fmt.Println("error: CreateAccount: impossible retrieve account id:" + err.Error())
+		tech.LogInfo(err.Error())
 		return nil, errors.New("INVALID_OPERATION")
 	}
 

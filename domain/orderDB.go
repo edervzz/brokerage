@@ -1,11 +1,11 @@
 package domain
 
 import (
+	"brokerage/tech"
 	"database/sql"
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -26,13 +26,16 @@ const SELL string = "SELL"
 func (db *OrderDB) CreateOrder(o *OrderIn) (*Order, error) {
 	var currentBalance, newBalance float32
 
-	// get balance
-	currentBalance, lastOperTime, err := db.GetBalanceAndLastOperation(o.AccountID, o.IssuerName)
+	if o.Timestamp == "" {
+		o.Timestamp = fmt.Sprint(time.Now().Unix())
+	}
+
+	currentBalance, err := db.GetBalance(o.AccountID, o.IssuerName)
 	if err != nil {
 		return nil, err
 	}
 
-	baseOrder := &Order{
+	newOrder := &Order{
 		AccountID: o.AccountID,
 		Balance:   float32(newBalance),
 	}
@@ -45,22 +48,25 @@ func (db *OrderDB) CreateOrder(o *OrderIn) (*Order, error) {
 		newBalance = currentBalance + (float32(o.TotalShares) * float32(o.SharePrice))
 	}
 
-	// get issuer
-	issuer, err := db.GetIssuer(o.AccountID, o.IssuerName)
+	// get issuerInfo
+	issuerInfo, err := db.GetIssuer(o.AccountID, o.IssuerName)
 	if err != nil {
-		return baseOrder, err
+		return newOrder, err
 	}
+
+	// get last operation
+	lastOperation, _ := db.GetLastOperation(o.AccountID, o.IssuerName)
 
 	// run checks
-	err = db.ChecksOrder(*o, issuer, newBalance, lastOperTime)
+	err = db.ChecksOrder(*o, issuerInfo, newBalance, lastOperation)
 	if err != nil {
-		return baseOrder, err
+		return newOrder, err
 	}
 
-	result, err := db.MakeTX(o, issuer, float32(newBalance))
+	result, err := db.MakeTX(o, issuerInfo, float32(newBalance))
 	if err != nil {
 		fmt.Println(err)
-		return baseOrder, err
+		return newOrder, err
 	}
 
 	return result, nil
@@ -68,9 +74,7 @@ func (db *OrderDB) CreateOrder(o *OrderIn) (*Order, error) {
 
 func (db *OrderDB) MakeTX(o *OrderIn, issuers *issuer, newBalance float32) (*Order, error) {
 
-	i, err := strconv.ParseInt(o.Timestamp, 10, 64)
-	tm := time.Unix(i, 0)
-	ts := tm.Local().Format("2006-01-02 15:04:05")
+	ts := tech.IntString2yymmdd_hhmmss(o.Timestamp)
 
 	tx, err := db.client.Begin()
 
@@ -86,21 +90,20 @@ func (db *OrderDB) MakeTX(o *OrderIn, issuers *issuer, newBalance float32) (*Ord
 
 	if issuers != nil && o.IssuerName == (*issuers).name {
 		_, err = tx.Exec(`UPDATE brokerage.issuer
-			SET qty=?,
-			last_operation=?
-			WHERE account_id=?
-			AND issuer_name=?`,
-			o.TotalShares, ts, o.AccountID, o.IssuerName)
+			SET qty=?
+			WHERE account_id = ?
+			AND issuer_name = ?`,
+			o.TotalShares, o.AccountID, o.IssuerName)
 		if err != nil {
 			tx.Rollback()
-			fmt.Println("error: CreateOrder: cannot insert issuer:", err.Error())
+			fmt.Println("error: CreateOrder: cannot update issuer:", err.Error())
 			return nil, errors.New("INVALID_OPERATION")
 		}
 	} else {
 		_, err = tx.Exec(`INSERT INTO brokerage.issuer
-			(account_id, issuer_name, last_operation, qty)
-			VALUES(?,?,?,?)`,
-			o.AccountID, o.IssuerName, ts, o.TotalShares)
+			(account_id, issuer_name, qty)
+			VALUES(?,?,?)`,
+			o.AccountID, o.IssuerName, o.TotalShares)
 		if err != nil {
 			tx.Rollback()
 			fmt.Println("error: CreateOrder: cannot insert issuer:", err.Error())
@@ -131,42 +134,33 @@ func (db *OrderDB) MakeTX(o *OrderIn, issuers *issuer, newBalance float32) (*Ord
 	}, nil
 }
 
-func (db *OrderDB) GetBalanceAndLastOperation(acctId int, issuer string) (float32, *time.Time, error) {
+func (db *OrderDB) GetBalance(acctId int, issuer string) (float32, error) {
 	var currentBalance float32
-	var lastOperation sql.NullString
-	var lastOperTime time.Time
 
-	row := db.client.QueryRow(`SELECT a.balance, i.last_operation  
-		FROM brokerage.account a
-		LEFT JOIN brokerage.issuer i
-		ON a.account_id = i.account_id
-		AND i.issuer_name = ?
-		WHERE a.account_id = ?`,
-		issuer, acctId,
+	row := db.client.QueryRow(`SELECT balance 
+		FROM brokerage.account
+		WHERE account_id = ?`,
+		acctId,
 	)
 
-	err := row.Scan(&currentBalance, &lastOperation)
+	err := row.Scan(&currentBalance)
 	if err != nil {
 		err = errors.New("error: CreateOrder: impossible to get balance: " + err.Error())
 		fmt.Println(err)
-		return 0, nil, errors.New("INVALID_OPERATION")
+		return 0, errors.New("INVALID_OPERATION")
 	}
 
-	// iTime, _ := strconv.ParseInt(lastOperation.String, 10, 64)
-	// lastOperTime = time.Unix(iTime, 0)
-
-	lastOperTime, err = time.ParseInLocation("2006-01-02 15:04:05", lastOperation.String, time.Local)
-
-	return currentBalance, &lastOperTime, nil
+	return currentBalance, nil
 }
 
-func (db *OrderDB) ChecksOrder(o OrderIn, i *issuer, currentBalance float32, lastOperTime *time.Time) error {
+func (db *OrderDB) ChecksOrder(o OrderIn, i *issuer, newBalance float32, lastOperTime *time.Time) error {
 
 	if BUY != o.Operation && SELL != o.Operation {
-		return errors.New("INVALID_OPERATION")
+		return errors.New("INVALID_OPERATION_TYPE")
 	}
 
-	if BUY == o.Operation && currentBalance <= float32(o.TotalShares)*float32(o.SharePrice) {
+	if (BUY == o.Operation && newBalance <= float32(o.TotalShares)*float32(o.SharePrice)) ||
+		newBalance < 0 {
 		return errors.New("INSUFFICIENT_FUNDS")
 	}
 
@@ -174,25 +168,26 @@ func (db *OrderDB) ChecksOrder(o OrderIn, i *issuer, currentBalance float32, las
 		return errors.New("INSUFFICIENT_STOCKS")
 	}
 
-	iTime, _ := strconv.ParseInt(o.Timestamp, 10, 64)
-	thisTime := time.Unix(iTime, 0)
+	gmt, err := tech.IntString2Time(o.Timestamp)
+	if err != nil {
+		tech.LogInfo(err.Error())
+		return errors.New("INVALID_OPERATION")
+	}
 
-	fmt.Println(thisTime.Format("2006-01-02 15:04:05"))
-	fmt.Println(lastOperTime.Format("2006-01-02 15:04:05"))
-
-	if lastOperTime.Unix() != 0 {
-		d := lastOperTime.Unix() - thisTime.Unix()
-		fmt.Println(d)
-		if math.Abs(float64(d)) <= 300 {
-			return errors.New("DUPLICATED_OPERATION")
+	if lastOperTime != nil {
+		if lastOperTime.Unix() != 0 {
+			d := gmt.Unix() - lastOperTime.Unix()
+			if math.Abs(float64(d)) <= 300 {
+				return errors.New("DUPLICATED_OPERATION")
+			}
 		}
 	}
 
-	// if !(thisTime.Hour() >= 6 && thisTime.Minute() >= 0 && thisTime.Second() >= 0 &&
-	// 	thisTime.Hour() <= 14 && thisTime.Minute() <= 59 && thisTime.Second() >= 59) {
-	// 	return errors.New("CLOSET_MARKET")
-	// }
-
+	localTime := gmt.Local()
+	if !(localTime.Hour() >= 6 && localTime.Minute() >= 0 && localTime.Second() >= 0 &&
+		localTime.Hour() <= 23 && localTime.Minute() <= 59 && localTime.Second() <= 59) {
+		return errors.New("CLOSET_MARKET")
+	}
 	return nil
 }
 
@@ -206,14 +201,14 @@ func (db *OrderDB) GetIssuer(acctId int, issuer_name string) (*issuer, error) {
 		acctId,
 	)
 	if err != nil {
-		fmt.Println(err)
+		tech.LogInfo(err.Error())
 		return nil, errors.New("INVALID_OPERATION")
 	}
 
 	for rows.Next() {
 		err = rows.Scan(&nameIssuer, &qtyIssuer)
 		if err != nil {
-			fmt.Println(err)
+			tech.LogInfo(err.Error())
 			return nil, errors.New("INVALID_OPERATION")
 		}
 
@@ -226,6 +221,33 @@ func (db *OrderDB) GetIssuer(acctId int, issuer_name string) (*issuer, error) {
 		}
 	}
 	return nil, nil
+}
+
+func (db *OrderDB) GetLastOperation(accId int, issuer string) (*time.Time, error) {
+	row := db.client.QueryRow(`SELECT MAX(timestamp) as max 
+		FROM brokerage.order
+		WHERE account_id = ?
+		AND issuer_name = ?`,
+		accId, issuer,
+	)
+	var timestamp sql.NullString
+	err := row.Scan(&timestamp)
+	if err != nil {
+		tech.LogInfo(err.Error())
+		return nil, err
+	}
+
+	if timestamp.String == "" {
+		return nil, nil
+	}
+
+	t, err := tech.String2Time(timestamp.String)
+	if err != nil {
+		tech.LogInfo(err.Error())
+		return nil, err
+	}
+
+	return t, nil
 }
 
 func NewOrderDB(c *sqlx.DB) *OrderDB {

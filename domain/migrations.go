@@ -36,7 +36,6 @@ func (m *Migration) CreateTables() {
 		_, err = m.client.Exec(`CREATE TABLE brokerage.issuer (
 			account_id INT NOT NULL,
 			issuer_name varchar(5) NOT NULL,
-			last_operation timestamp,
 			qty INT NULL,
 			CONSTRAINT issuer_PK PRIMARY KEY (account_id,issuer_name),
 			CONSTRAINT issuer_FK FOREIGN KEY (account_id) REFERENCES brokerage.account(account_id))`)
@@ -67,6 +66,15 @@ func (m *Migration) CreateTables() {
 		if err != nil {
 			panic(err)
 		}
+
+		_, err = m.client.Exec(`CREATE INDEX order_account_id_IDX 
+			USING BTREE 
+			ON brokerage.'order' 
+			(account_id,issuer_name,'timestamp');`)
+		if err != nil {
+			panic(err)
+		}
+
 	}
 
 }

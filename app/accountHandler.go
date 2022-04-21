@@ -17,10 +17,13 @@ func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	json.NewDecoder(r.Body).Decode(&request)
 	response, appMess := h.service.CreateAccount(&request)
-	json.NewEncoder(w).Encode(response)
-	if appMess != nil {
+
+	if appMess.Code != 0 {
 		w.WriteHeader(appMess.Code)
+		json.NewEncoder(w).Encode(appMess.Message)
+		return
 	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func NewAccountHandler(s service.AccountService) *AccountHandler {
