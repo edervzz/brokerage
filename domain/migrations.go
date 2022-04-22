@@ -1,6 +1,10 @@
 package domain
 
-import "github.com/jmoiron/sqlx"
+import (
+	"brokerage/tech"
+
+	"github.com/jmoiron/sqlx"
+)
 
 type Migration struct {
 	client *sqlx.DB
@@ -10,7 +14,7 @@ type MigrationDB interface {
 	CreateTables()
 }
 
-func (m *Migration) CreateTables() {
+func (m *Migration) CreateTables() error {
 	var brokerage string
 
 	row := m.client.QueryRow(`SELECT schema_name
@@ -20,9 +24,11 @@ func (m *Migration) CreateTables() {
 	row.Scan(&brokerage)
 
 	if brokerage != "brokerage" {
+
 		_, err := m.client.Exec(`CREATE DATABASE brokerage`)
 		if err != nil {
-			panic(err)
+			tech.LogWarn(err.Error())
+			return err
 		}
 
 		_, err = m.client.Exec(`CREATE TABLE brokerage.account (
@@ -30,7 +36,8 @@ func (m *Migration) CreateTables() {
 			balance DECIMAL NULL,
 			CONSTRAINT account_PK PRIMARY KEY (account_id))`)
 		if err != nil {
-			panic(err)
+			tech.LogWarn(err.Error())
+			return err
 		}
 
 		_, err = m.client.Exec(`CREATE TABLE brokerage.issuer (
@@ -40,7 +47,8 @@ func (m *Migration) CreateTables() {
 			CONSTRAINT issuer_PK PRIMARY KEY (account_id,issuer_name),
 			CONSTRAINT issuer_FK FOREIGN KEY (account_id) REFERENCES brokerage.account(account_id))`)
 		if err != nil {
-			panic(err)
+			tech.LogWarn(err.Error())
+			return err
 		}
 
 		_, err = m.client.Exec(`CREATE TABLE brokerage.order (
@@ -55,7 +63,8 @@ func (m *Migration) CreateTables() {
 			CONSTRAINT order_UN UNIQUE KEY (order_id,account_id),
 			CONSTRAINT order_FK FOREIGN KEY (account_id) REFERENCES brokerage.account(account_id))`)
 		if err != nil {
-			panic(err)
+			tech.LogWarn(err.Error())
+			return err
 		}
 
 		_, err = m.client.Exec(`CREATE TABLE brokerage.queue (
@@ -69,14 +78,16 @@ func (m *Migration) CreateTables() {
 
 		_, err = m.client.Exec(`CREATE INDEX order_account_id_IDX 
 			USING BTREE 
-			ON brokerage.'order' 
-			(account_id,issuer_name,'timestamp');`)
+			ON brokerage.order
+			(account_id,issuer_name,total_shares)`)
 		if err != nil {
-			panic(err)
+			tech.LogWarn(err.Error())
+			return err
 		}
 
 	}
-
+	tech.LogInfo("info: database brokerage created")
+	return nil
 }
 
 func NewMigration(client *sqlx.DB) *Migration {

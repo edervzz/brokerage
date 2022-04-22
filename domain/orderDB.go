@@ -53,12 +53,11 @@ func (db *OrderDB) CreateOrder(o *OrderIn) (*Order, error) {
 	if err != nil {
 		return newOrder, err
 	}
-
 	// get last operation
-	lastOperation, _ := db.GetLastOperation(o.AccountID, o.IssuerName)
+	lastOperation, operation, _ := db.GetLastOperation(o.AccountID, o.IssuerName, o.TotalShares)
 
 	// run checks
-	err = db.ChecksOrder(*o, issuerInfo, newBalance, lastOperation)
+	err = db.ChecksOrder(*o, issuerInfo, newBalance, lastOperation, operation)
 	if err != nil {
 		return newOrder, err
 	}
@@ -153,7 +152,8 @@ func (db *OrderDB) GetBalance(acctId int, issuer string) (float32, error) {
 	return currentBalance, nil
 }
 
-func (db *OrderDB) ChecksOrder(o OrderIn, i *issuer, newBalance float32, lastOperTime *time.Time) error {
+func (db *OrderDB) ChecksOrder(o OrderIn, i *issuer, newBalance float32,
+	lastOperTime *time.Time, lastOperation string) error {
 
 	if BUY != o.Operation && SELL != o.Operation {
 		return errors.New("INVALID_OPERATION_TYPE")
@@ -177,14 +177,16 @@ func (db *OrderDB) ChecksOrder(o OrderIn, i *issuer, newBalance float32, lastOpe
 	if lastOperTime != nil {
 		if lastOperTime.Unix() != 0 {
 			d := gmt.Unix() - lastOperTime.Unix()
-			if math.Abs(float64(d)) <= 300 {
+			if math.Abs(float64(d)) <= 300 &&
+				o.Operation == lastOperation &&
+				o.TotalShares == o.TotalShares {
 				return errors.New("DUPLICATED_OPERATION")
 			}
 		}
 	}
 
 	localTime := gmt.Local()
-	if !(localTime.Hour() >= 6 && localTime.Minute() >= 0 && localTime.Second() >= 0 &&
+	if !(localTime.Hour() >= 0 && localTime.Minute() >= 0 && localTime.Second() >= 0 &&
 		localTime.Hour() <= 23 && localTime.Minute() <= 59 && localTime.Second() <= 59) {
 		return errors.New("CLOSET_MARKET")
 	}
@@ -223,31 +225,34 @@ func (db *OrderDB) GetIssuer(acctId int, issuer_name string) (*issuer, error) {
 	return nil, nil
 }
 
-func (db *OrderDB) GetLastOperation(accId int, issuer string) (*time.Time, error) {
-	row := db.client.QueryRow(`SELECT MAX(timestamp) as max 
+func (db *OrderDB) GetLastOperation(accId int, issuer string, totalShares int) (*time.Time, string, error) {
+	row := db.client.QueryRow(`SELECT MAX(timestamp) as maxts, operation 
 		FROM brokerage.order
 		WHERE account_id = ?
-		AND issuer_name = ?`,
-		accId, issuer,
+		AND issuer_name = ?
+		AND total_shares = ?
+		GROUP BY operation, total_shares
+		ORDER BY maxts DESC`,
+		accId, issuer, totalShares,
 	)
-	var timestamp sql.NullString
-	err := row.Scan(&timestamp)
+	var timestamp, operation sql.NullString
+	err := row.Scan(&timestamp, &operation)
 	if err != nil {
 		tech.LogInfo(err.Error())
-		return nil, err
+		return nil, "", err
 	}
 
-	if timestamp.String == "" {
-		return nil, nil
+	if timestamp.String == "" || operation.String == "" {
+		return nil, "", nil
 	}
 
 	t, err := tech.String2Time(timestamp.String)
 	if err != nil {
 		tech.LogInfo(err.Error())
-		return nil, err
+		return nil, "", err
 	}
 
-	return t, nil
+	return t, operation.String, nil
 }
 
 func NewOrderDB(c *sqlx.DB) *OrderDB {

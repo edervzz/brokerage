@@ -18,7 +18,7 @@ func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&request)
 	response, appMess := h.service.CreateAccount(&request)
 
-	if appMess.Code != 0 {
+	if appMess != nil {
 		w.WriteHeader(appMess.Code)
 		json.NewEncoder(w).Encode(appMess.Message)
 		return

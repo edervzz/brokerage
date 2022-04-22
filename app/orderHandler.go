@@ -29,7 +29,7 @@ func (h OrderHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&orderRes.Orders)
 
 	response := h.service.CreateOrder(&orderRes)
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(response.CBalance)
 
 }
 

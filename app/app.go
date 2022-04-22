@@ -2,6 +2,7 @@ package app
 
 import (
 	"brokerage/domain"
+	"brokerage/migrations"
 	"brokerage/service"
 	"fmt"
 	"net/http"
@@ -16,11 +17,11 @@ func Run() {
 	client := CreateClientDB()
 	router := mux.NewRouter()
 
-	migrateHandler := NewMigrationHandler(service.NewMigrationServiceInterface(domain.NewMigration(client)))
+	migrateHandler := NewMigrationHandler(migrations.NewMigrationServiceInterface(domain.NewMigration(client)))
 	accountHandler := NewAccountHandler(service.NewAccountServiceInterface(domain.NewAccountDB(client)))
 	orderHandler := NewOrderHandler(service.NewOrderServiceInterface(domain.NewOrderDB(client)))
 
-	router.HandleFunc("/migrate", migrateHandler.Create).Methods(http.MethodPost)
+	router.HandleFunc("/migration", migrateHandler.Create).Methods(http.MethodPost)
 	router.HandleFunc("/accounts", accountHandler.Create).Methods(http.MethodPost)
 	router.HandleFunc("/accounts/{id}/orders", orderHandler.Create).Methods(http.MethodPost)
 
